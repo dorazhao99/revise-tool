@@ -391,10 +391,10 @@ class CoCoDataset(data.Dataset):
         self.transform = transform
         
         self.supercategories_to_names = DEFAULT_GROUPINGS_TO_NAMES
-        self.img_folder = 'Data/Coco/2014data/train2014'
-        self.coco = COCO('Data/Coco/2014data/annotations/instances_train2014.json')
+        self.img_folder = '/n/fs/visualai-scr/Data/Coco/2014data/val2014'
+        self.coco = COCO('/n/fs/visualai-scr/Data/Coco/2014data/annotations/instances_val2014.json')
+        self.attribute_data = 'instances_val2014.csv'
         gender_data = pickle.load(open('Data/Coco/2014data/bias_splits/train.data', 'rb'))
-        self.attribute_data = {int(chunk['img'][15:27]): chunk['annotation'][0] for chunk in gender_data}
 
         ids = list(self.coco.anns.keys())
         self.image_ids = list(set([self.coco.anns[this_id]['image_id'] for this_id in ids]))
@@ -511,6 +511,18 @@ class CoCoDataset(data.Dataset):
         formatted_anns = []
         biggest_person = 0
         biggest_bbox = 0
+
+        flickr_url = self.coco.loadImgs(ids=[imgId])[0]['flickr_url']
+        flickr_id = flickr_url.split('_')[0].split('/')[-1]
+        try:
+            location = flickr.photos.geo.getLocation(photo_id=flickr_id)['photo']['location']
+            country = location['country']['_content']
+            lat_lng = {}
+            lat_lng['lat'], lat_lng['lng'] = location['latitude'], location['longitude']
+        except:
+            country = None
+            lat_lng = None
+
         for ann in coco_anns:
             bbox = ann['bbox']
             bbox = [bbox[0] / image_size[1], (bbox[0]+bbox[2]) / image_size[1], bbox[1] / image_size[0], (bbox[1]+bbox[3]) / image_size[0]]
