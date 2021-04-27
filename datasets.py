@@ -265,7 +265,7 @@ class TemplateDataset(data.Dataset):
 
         country = None # optional
 
-        #Note: This is a map of present labels: image_anns = [{‘label’: ‘tennis_ball’}, {‘label’: ‘dog’}] where the image has a tennis ball and a dog
+        #Note: This is a map of present labels: image_anns = [{'label': 'tennis_ball'}, {'label': 'dog'}] where the image has a tennis ball and a dog
         image_anns = None
 
         scene_group = self.scene_mapping[file_path] # optional
@@ -284,8 +284,8 @@ class OpenImagesDataset(data.Dataset):
     def __init__(self, transform):
         self.transform = transform
         
-        self.img_folder = 'Data/OpenImages/'
-        with open('Data/OpenImages/train-images-boxable-with-rotation.csv', newline='') as csvfile:
+        self.img_folder = '/n/fs/visualai-scr/Data/OpenImages/'
+        with open('/n/fs/visualai-scr/Data/OpenImages/train-images-boxable-with-rotation.csv', newline='') as csvfile:
             data = list(csv.reader(csvfile))[1:]
 
             # first line for subset of dataset, second line for full
@@ -293,7 +293,7 @@ class OpenImagesDataset(data.Dataset):
             self.image_ids = [chunk[0] for chunk in data]
         
         self.setup_anns()
-        names = list(csv.reader(open('Data/OpenImages/class-descriptions-boxable.csv', newline='')))
+        names = list(csv.reader(open('/n/fs/visualai-scr/Data/OpenImages/class-descriptions-boxable.csv', newline='')))
         self.labels_to_names = {name[0]: name[1] for name in names}
         self.categories = list(self.labels_to_names.keys())
         self.attribute_names = ["Female", "Male"]
@@ -335,7 +335,7 @@ class OpenImagesDataset(data.Dataset):
             self.anns = info['anns']
             self.num_attribute_images = info['num_gender']
         else:
-            with open('Data/OpenImages/train-annotations-bbox.csv', newline='') as csvfile:
+            with open('/n/fs/visualai-scr/Data/OpenImages/train-annotations-bbox.csv', newline='') as csvfile:
                 data = list(csv.reader(csvfile))[1:]
                 # bbox is normalized to be between 0 and 1 and of the form [xmin, xmax, ymin, ymax]
                 # so to retrieve piece, do image[bbox[2]:bbox[3], bbox[0]:bbox[1]]
@@ -347,6 +347,14 @@ class OpenImagesDataset(data.Dataset):
                         self.anns[chunk[0]].append(new_ann)
                     else:
                         self.anns[chunk[0]] = [new_ann]
+
+            with open('/n/fs/visualai-scr/Data/OpenImages/train-images-boxable-with-rotation.csv', newline='') as csvfile:
+                data = list(csv.reader(csvfile))[1:]
+                # the static Flickr url (necessary for retrieving geographic location) is stored in this file 
+                for chunk in data:
+                    if chunk[0] in self.anns:
+                        for index in range(len(self.anns[chunk[0]])):
+                            self.anns[chunk[0]][index]['flickr_url'] = chunk[2].split('_')[0].split('/')[-1]
 
             self.num_attribute_images = [0, 0]
             men = ['/m/01bl7v', '/m/04yx4']
