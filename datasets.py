@@ -21,6 +21,7 @@ import torch
 import spacy
 from scipy.special import softmax 
 import numpy as np
+import flickrapi
 from collections import OrderedDict 
 nlp = spacy.load("en_core_web_lg")
 import json
@@ -202,6 +203,21 @@ def group_mapping_creator(labels_to_names, supercategories_to_names=DEFAULT_GROU
     # return function of mapping from label-> supercat
     return lambda label: result_label_to_group_map.get(label)
 
+def flickr_query_location(flickr_id):
+    # set up Flickr tool
+    api_key, secret = 'a4ea280493da6b3751c1af909e0d1feb', 'f0796b5bb0a161cf' # NEEDS TO BE DELETED 
+    flickr = flickrapi.FlickrAPI(api_key, secret, format='parsed-json')
+    
+    try:
+        location = flickr.photos.geo.getLocation(photo_id=flickr_id)['photo']['location']
+        lat_lng = {
+            'lat': location['latitude'],
+            'lng': location['longitude']
+        }
+    except:
+        lat_lng = {}
+    return lat_lng
+
 class TemplateDataset(data.Dataset):
     
     def __init__(self, transform):
@@ -341,21 +357,24 @@ class OpenImagesDataset(data.Dataset):
                 # so to retrieve piece, do image[bbox[2]:bbox[3], bbox[0]:bbox[1]]
 
                 self.anns = {}
-                for chunk in data:
+                for i, chunk in enumerate(data):
                     new_ann = {'bbox': [float(chunk[4]), float(chunk[5]), float(chunk[6]), float(chunk[7])], 'label': chunk[2]}
                     if chunk[0] in self.anns.keys():
                         self.anns[chunk[0]].append(new_ann)
                     else:
                         self.anns[chunk[0]] = [new_ann]
-
+                    if i > 100: break
             with open('/n/fs/visualai-scr/Data/OpenImages/train-images-boxable-with-rotation.csv', newline='') as csvfile:
                 data = list(csv.reader(csvfile))[1:]
                 # the static Flickr url (necessary for retrieving geographic location) is stored in this file 
-                for chunk in data:
+                for i, chunk in enumerate(data):
                     if chunk[0] in self.anns:
                         for index in range(len(self.anns[chunk[0]])):
-                            self.anns[chunk[0]][index]['flickr_url'] = chunk[2].split('_')[0].split('/')[-1]
-
+                            flickr_id = chunk[2].split('_')[0].split('/')[-1]
+                            lat_lng = flickr_query_location(flickr_id) 
+                            print("Image {0} Lat-Lng {1}".format(i, lat_lng))
+                            self.anns[chunk[0]][index]['lat_lng'] = lat_lng
+                    if i > 100: break        
             self.num_attribute_images = [0, 0]
             men = ['/m/01bl7v', '/m/04yx4']
             women = ['/m/03bt1vf', '/m/05r655']
@@ -389,6 +408,7 @@ class OpenImagesDataset(data.Dataset):
                 else:
                     self.anns[key] = [self.anns[key], [0], [0]]
             info = {}
+            print(self.anns)
             info['anns'] = self.anns
             info['num_gender'] = self.num_attribute_images
             pickle.dump(info, open('dataloader_files/openimage_anns.pkl', 'wb'))
@@ -522,14 +542,7 @@ class CoCoDataset(data.Dataset):
 
         flickr_url = self.coco.loadImgs(ids=[imgId])[0]['flickr_url']
         flickr_id = flickr_url.split('_')[0].split('/')[-1]
-        try:
-            location = flickr.photos.geo.getLocation(photo_id=flickr_id)['photo']['location']
-            country = location['country']['_content']
-            lat_lng = {}
-            lat_lng['lat'], lat_lng['lng'] = location['latitude'], location['longitude']
-        except:
-            country = None
-            lat_lng = None
+        lat_lng = flickr_query_location(flickr_id)
 
         for ann in coco_anns:
             bbox = ann['bbox']
@@ -545,9 +558,9 @@ class CoCoDataset(data.Dataset):
 
         scene = self.scene_mapping.get(file_path, None)
         if biggest_bbox != 0 and image_id in self.attribute_data.keys():
-            anns = [formatted_anns, [[self.attribute_data[image_id]], [biggest_bbox]], [0], file_path, scene]
+            anns = [formatted_anns, [[self.attribute_data[image_id]], [biggest_bbox]], [0], file_path, scene, lat_lng]
         else:
-            anns = [formatted_anns, [0], [0], file_path, scene]
+            anns = [formatted_anns, [0], [0], file_path, scene, lat_lng]
 
         return image, anns
     
