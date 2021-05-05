@@ -215,7 +215,7 @@ def flickr_query_location(flickr_id):
             'lng': location['longitude']
         }
     except:
-        lat_lng = {}
+        lat_lng = None
     return lat_lng
 
 class TemplateDataset(data.Dataset):
@@ -307,18 +307,17 @@ class OpenImagesDataset(data.Dataset):
             # first line for subset of dataset, second line for full
             # self.image_ids = [chunk[0] for chunk in data if (chunk[0][0] == '0')]
             self.image_ids = [chunk[0] for chunk in data]
-        
+        self.locations = {}        
         self.setup_anns()
         names = list(csv.reader(open('/n/fs/visualai-scr/Data/OpenImages/class-descriptions-boxable.csv', newline='')))
         self.labels_to_names = {name[0]: name[1] for name in names}
         self.categories = list(self.labels_to_names.keys())
         self.attribute_names = ["Female", "Male"]
-
         self.scene_mapping = NoneDict()
         if os.path.exists('dataloader_files/openimages_scene_mapping.pkl'):
             self.scene_mapping = pickle.load(open('dataloader_files/openimages_scene_mapping.pkl', 'rb'))
-        else:
-            setup_scenemapping(self, 'openimages')
+        #else:
+        #    setup_scenemapping(self, 'openimages')
 
         self.group_mapping = None
         self.people_labels = ['/m/01bl7v', '/m/04yx4', '/m/03bt1vf', '/m/05r655'] # keys in self.categories
@@ -357,24 +356,26 @@ class OpenImagesDataset(data.Dataset):
                 # so to retrieve piece, do image[bbox[2]:bbox[3], bbox[0]:bbox[1]]
 
                 self.anns = {}
-                for i, chunk in enumerate(data):
+                print('Getting image annotations')
+                for i, chunk in enumerate(tqdm(data)):
                     new_ann = {'bbox': [float(chunk[4]), float(chunk[5]), float(chunk[6]), float(chunk[7])], 'label': chunk[2]}
                     if chunk[0] in self.anns.keys():
                         self.anns[chunk[0]].append(new_ann)
                     else:
                         self.anns[chunk[0]] = [new_ann]
-                    if i > 100: break
+                                   
             with open('/n/fs/visualai-scr/Data/OpenImages/train-images-boxable-with-rotation.csv', newline='') as csvfile:
                 data = list(csv.reader(csvfile))[1:]
                 # the static Flickr url (necessary for retrieving geographic location) is stored in this file 
-                for i, chunk in enumerate(data):
-                    if chunk[0] in self.anns:
-                        for index in range(len(self.anns[chunk[0]])):
-                            flickr_id = chunk[2].split('_')[0].split('/')[-1]
-                            lat_lng = flickr_query_location(flickr_id) 
-                            print("Image {0} Lat-Lng {1}".format(i, lat_lng))
-                            self.anns[chunk[0]][index]['lat_lng'] = lat_lng
-                    if i > 100: break        
+                print('Getting geographic information')
+                for i, chunk in enumerate(tqdm(data)):
+                    if i <= 5000 and chunk[0] in self.anns:
+                        flickr_id = chunk[2].split('_')[0].split('/')[-1]
+                        lat_lng = flickr_query_location(flickr_id)
+                        self.locations[chunk[0]] = lat_lng
+                    else:
+                        self.locations[chunk[0]] = None
+                        
             self.num_attribute_images = [0, 0]
             men = ['/m/01bl7v', '/m/04yx4']
             women = ['/m/03bt1vf', '/m/05r655']
@@ -400,15 +401,14 @@ class OpenImagesDataset(data.Dataset):
                             biggest_bbox = this_bbox
 
                 if m_presence > 0 and w_presence == 0:
-                    self.anns[key] = [self.anns[key], [[1], [biggest_bbox]], [0]]
+                    self.anns[key] = [self.anns[key], [[1], [biggest_bbox]], [0], [0], [0], self.locations[key]]
                     self.num_attribute_images[1] += 1
                 elif w_presence > 0 and m_presence == 0:
-                    self.anns[key] = [self.anns[key], [[0], [biggest_bbox]], [0]]
+                    self.anns[key] = [self.anns[key], [[0], [biggest_bbox]], [0], [0], [0], self.locations[key]]
                     self.num_attribute_images[0] += 1
                 else:
-                    self.anns[key] = [self.anns[key], [0], [0]]
+                    self.anns[key] = [self.anns[key], [0], [0], [0], [0], self.locations[key]]
             info = {}
-            print(self.anns)
             info['anns'] = self.anns
             info['num_gender'] = self.num_attribute_images
             pickle.dump(info, open('dataloader_files/openimage_anns.pkl', 'wb'))
@@ -422,7 +422,6 @@ class CoCoDataset(data.Dataset):
         self.img_folder = '/n/fs/visualai-scr/Data/Coco/2014data/val2014'
         self.coco = COCO('/n/fs/visualai-scr/Data/Coco/2014data/annotations/instances_val2014.json')
         self.attribute_data = 'instances_val2014.csv'
-        gender_data = pickle.load(open('Data/Coco/2014data/bias_splits/train.data', 'rb'))
 
         ids = list(self.coco.anns.keys())
         self.image_ids = list(set([self.coco.anns[this_id]['image_id'] for this_id in ids]))
@@ -433,14 +432,32 @@ class CoCoDataset(data.Dataset):
             self.labels_to_names[cat['id']] = cat['name']
 
         self.categories = list(self.labels_to_names.keys())
-        self.attribute_names = ["Female", "Male"]
+        self.attribute_names = ["Unsure","1", "2", "3", "4", "5", "6"]
+
+        self.annotation_ids = {}
+        self.num_attribute_images = [0 for i in range(len(self.attribute_names))]
+        count = 0
+        with open(self.attribute_data, 'r') as read_obj:
+            csv_reader = csv.reader(read_obj)
+            for row in csv_reader:
+                #Skip the heading
+                if count > 1:
+                    attribute_val = row[4]
+                    if attribute_val == attribute_val and len(attribute_val)>0:
+                        self.annotation_ids[int(row[1])] = attribute_val
+                        for name in range(len(self.attribute_names)):
+                            if attribute_val == self.attribute_names[name]:
+                                self.num_attribute_images[name] += 1
+                else:
+                    count += 1
         self.scene_mapping = NoneDict()
-        if os.path.exists('dataloader_files/coco_scene_mapping.pkl'):
-            self.scene_mapping = pickle.load(open('dataloader_files/coco_scene_mapping.pkl', 'rb'))
-        elif os.path.exists('results/coco_example/coco_scene_mapping.pkl'):
-            self.scene_mapping = pickle.load(open('results/coco_example/coco_scene_mapping.pkl', 'rb'))
-        else:
-            setup_scenemapping(self, 'coco')
+
+        #if os.path.exists('dataloader_files/coco_scene_mapping.pkl'):
+        #    self.scene_mapping = pickle.load(open('dataloader_files/coco_scene_mapping.pkl', 'rb'))
+        #elif os.path.exists('results/coco_example/coco_scene_mapping.pkl'):
+        #    self.scene_mapping = pickle.load(open('results/coco_example/coco_scene_mapping.pkl', 'rb'))
+        #else:
+        #    setup_scenemapping(self, 'coco')
 
         def mapping(ind):
             if ind == 1:
@@ -527,7 +544,7 @@ class CoCoDataset(data.Dataset):
             anns = [formatted_anns, [0], [0], file_path, scene]
         return image, anns        
 
-    def from_path(self, file_path):
+    def from_path_old(self, file_path):
         image_id = int(os.path.basename(file_path)[-16:-4])
 
         image = Image.open(file_path).convert("RGB")
@@ -539,8 +556,8 @@ class CoCoDataset(data.Dataset):
         formatted_anns = []
         biggest_person = 0
         biggest_bbox = 0
-
-        flickr_url = self.coco.loadImgs(ids=[imgId])[0]['flickr_url']
+        print(image_id)
+        flickr_url = self.coco.loadImgs(ids=[image_id])[0]['flickr_url']
         flickr_id = flickr_url.split('_')[0].split('/')[-1]
         lat_lng = flickr_query_location(flickr_id)
 
@@ -559,6 +576,56 @@ class CoCoDataset(data.Dataset):
         scene = self.scene_mapping.get(file_path, None)
         if biggest_bbox != 0 and image_id in self.attribute_data.keys():
             anns = [formatted_anns, [[self.attribute_data[image_id]], [biggest_bbox]], [0], file_path, scene, lat_lng]
+        else:
+            anns = [formatted_anns, [0], [0], file_path, scene, lat_lng]
+
+        return image, anns
+
+    def from_path(self, file_path):
+        image_id = int(os.path.basename(file_path)[-16:-4])
+        
+        image = Image.open(file_path).convert("RGB")
+        image = self.transform(image)
+        image_size = list(image.size())[1:]
+
+        annIds = self.coco.getAnnIds(imgIds=image_id);
+        coco_anns = self.coco.loadAnns(annIds) # coco is [x, y, width, height]
+        formatted_anns = []
+        bboxes = []
+        skin_ids = []
+
+        flickr_url = self.coco.loadImgs(ids=[image_id])[0]['flickr_url']
+        flickr_id = flickr_url.split('_')[0].split('/')[-1]
+        lat_lng = flickr_query_location(flickr_id)
+
+        for ann in coco_anns:
+            bbox = ann['bbox']
+            bbox = [bbox[0] / image_size[1], (bbox[0]+bbox[2]) / image_size[1], bbox[1] / image_size[0], (bbox[1]+bbox[3]) / image_size[0]]
+            new_ann = {'bbox': bbox, 'label': ann['category_id']}
+            formatted_anns.append(new_ann)
+            if ann['category_id'] == 1:
+                bboxes.append(bbox)
+                skin_ids.append(int(ann['id']))
+
+        scene = None
+        if len(bboxes) != 0:
+            bboxes_keep = [bboxes[i] for i in range(len(bboxes)) if skin_ids[i] in self.annotation_ids.keys()]
+            skin_ids = [skin_ids[i] for i in range(len(skin_ids)) if skin_ids[i] in self.annotation_ids.keys()]
+            vals = [self.annotation_ids[i] for i in skin_ids]
+            if type(vals) is list:
+                indexes = []
+                for val in vals:
+                    if val == "Unsure":
+                        indexes.append(0)
+                    else:
+                        indexes.append(int(val))
+            else:
+                if vals == "Unsure":
+                    indexes = [0]
+                else:
+                    indexes = [int(self.attribute_val[image_id])]
+
+            anns = [formatted_anns, [indexes, bboxes_keep], [0], file_path, scene, lat_lng]
         else:
             anns = [formatted_anns, [0], [0], file_path, scene, lat_lng]
 
