@@ -481,7 +481,6 @@ def geo_lng(dataloader, args):
 def geo_att(dataloader, args):
     geo_att = {}
 
-    print(dataloader)
     # code adapted from geo_ctr_gps
     geo_boundaries = dataloader.dataset.geo_boundaries
     geo_boundaries_key_name = dataloader.dataset.geo_boundaries_key_name
@@ -489,17 +488,6 @@ def geo_att(dataloader, args):
     # import subregion boundaries shapefile
     subregion_boundaries = dataloader.dataset.subregion_boundaries
     subregion_boundaries_key_name = dataloader.dataset.subregion_boundaries_key_name
-
-    # maps each region (eg. Manhattan) to an array of id's representing the data filename
-    region_to_id_map = {}
-    # maps each id (representing data filename) to gps (lat + lng information)
-    id_to_gps_map = {}
-    # maps each id (representing data filename) to region 
-    id_to_region_map = {}
-
-    # maps each subregion (eg. North America) to an array of id's representing the data filename
-    subregion_to_id_map = {}
-    id_to_subregion_map = {}
 
     # fn that returns name of political region that a point falls into (eg. Manhattan)
     def bin_point(lng, lat, is_subregion):
@@ -523,39 +511,10 @@ def geo_att(dataloader, args):
         attribute = target[1]
         lat_lng = target[5]
         if len(attribute) > 1 and lat_lng is not None:
-            # for att in attribute[0]:
             region_name = (bin_point(float(lat_lng['lng']), float(lat_lng['lat']), False))   
             if subregion_boundaries is not None:
                 subregion_names = bin_point(float(lat_lng['lng']), float(lat_lng['lat']), True)
-            """
-            # add filepath id to region_to_id_map
-            if region_name is not None:
-                id_to_region_map[target[3]] = region_name
-                id_list = region_to_id_map.get(region_name, [])
-                id_list.append(target[3])
-                # add filepath id to region_to_id_map
-                region_to_id_map[region_name] = id_list
-
-            else:
-                id_to_region_map[target[3]] = 'out_of_boundary'
-                id_list = region_to_id_map.get('out_of_boundary', [])
-                id_list.append(target[3])
-                # add filepath id to region_to_id_map
-                region_to_id_map['out_of_boundary'] = id_list
-            
-            if subregion_boundaries is not None:
-                subregion_names = bin_point(float(lat_lng['lng']), float(lat_lng['lat']), True)
-                if subregion_names is not None:
-                    id_to_subregion_map[target[3]] = subregion_name
-                    id_list = subregion_to_id_map.get(subregion_name, [])
-                    id_list.append(target[3])
-                    subregion_to_id_map[subregion_name] = id_list
-                else:
-                    id_list = subregion_to_id_map.get('out_of_boundary', [])
-                    id_list.append(target[3])
-                    subregion_to_id_map['out_of_boundary'] = id_list
-                    id_to_subregion_map[target[3]] = "out_of_boundary"
-            """
+            # add the subregion and region binnings
             for att in attribute[0]:
                 if att not in geo_att:
                     if subregion_boundaries is not None: 
@@ -566,6 +525,5 @@ def geo_att(dataloader, args):
                 geo_att[att]['region'].append(region_name)
                 if subregion_boundaries is not None:
                     geo_att[att]['subregion'].append(subregion_names)
-            print(geo_att)
-    pickle.dump(counts, open("results/{}/geo_att.pkl".format(args.folder), "wb"))
+    pickle.dump(geo_att, open("results/{}/geo_att.pkl".format(args.folder), "wb"))
     
